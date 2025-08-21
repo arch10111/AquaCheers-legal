@@ -16,26 +16,32 @@
   <script type="module">
     import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-    const supabaseUrl = 'https://qodanjudswhcgmsuhpbs.supabase.co'
-    const supabaseAnonKey = 'sb_publishable_0QU85I7LqcdOaPSVvZVMEg_reQ9GPKe'
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = createClient(
+      'https://qodanjudswhcgmsuhpbs.supabase.co',
+      'sb_publishable_0QU85I7LqcdOaPSVvZVMEg_reQ9GPKe'
+    )
 
-    async function init() {
-      const statusEl = document.getElementById('status')
-      const formEl = document.getElementById('form')
-      const pwdEl = document.getElementById('pwd')
-      const btnEl = document.getElementById('btn')
+    const statusEl = document.getElementById('status')
+    const formEl = document.getElementById('form')
+    const pwdEl = document.getElementById('pwd')
+    const btnEl = document.getElementById('btn')
 
+    async function verifySessionFromUrl() {
       const params = new URLSearchParams(window.location.search)
       const code = params.get('code')
 
-      if (!code) {
-        statusEl.textContent = 'Invalid or missing link. Please request a new password reset email.'
-        return
-      }
-
       try {
-        await supabase.auth.exchangeCodeForSession(code)
+        if (code) {
+          // PKCE / code query param flow
+          await supabase.auth.exchangeCodeForSession(code)
+        } else if (window.location.hash && window.location.hash.includes('access_token')) {
+          // Hash/token flow
+          const { error } = await supabase.auth.getSessionFromUrl({ storeSession: true })
+          if (error) throw error
+        } else {
+          throw new Error('Missing code or access token in URL')
+        }
+
         statusEl.textContent = 'Link verified. Enter your new password:'
         formEl.style.display = 'block'
 
@@ -56,11 +62,11 @@
         }
       } catch (e) {
         console.error(e)
-        statusEl.textContent = 'This link is invalid or expired. Please request a new password reset email.'
+        statusEl.textContent = 'Invalid or expired link. Please request a new password reset email.'
       }
     }
 
-    window.addEventListener('DOMContentLoaded', init)
+    window.addEventListener('DOMContentLoaded', verifySessionFromUrl)
   </script>
 </head>
 <body>
