@@ -15,36 +15,42 @@
   </style>
   <script type="module">
     import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-
+  
     const supabase = createClient(
       'https://qodanjudswhcgmsuhpbs.supabase.co',
       'sb_publishable_0QU85I7LqcdOaPSVvZVMEg_reQ9GPKe'
     )
-
+  
     const statusEl = document.getElementById('status')
     const formEl = document.getElementById('form')
     const pwdEl = document.getElementById('pwd')
     const btnEl = document.getElementById('btn')
-
+  
+    function getParam(name) {
+      return new URLSearchParams(window.location.search).get(name)
+    }
+  
     async function verifySessionFromUrl() {
-      const params = new URLSearchParams(window.location.search)
-      const code = params.get('code')
-
+      const code = getParam('code')
+      const token = getParam('token') || getParam('token_hash') // recovery style
+      const hasAccessToken = window.location.hash.includes('access_token')
+  
       try {
         if (code) {
-          // PKCE / code query param flow
           await supabase.auth.exchangeCodeForSession(code)
-        } else if (window.location.hash && window.location.hash.includes('access_token')) {
-          // Hash/token flow
+        } else if (token) {
+          const { error } = await supabase.auth.verifyOtp({ type: 'recovery', token_hash: token })
+          if (error) throw error
+        } else if (hasAccessToken) {
           const { error } = await supabase.auth.getSessionFromUrl({ storeSession: true })
           if (error) throw error
         } else {
-          throw new Error('Missing code or access token in URL')
+          throw new Error('Missing code/token in URL')
         }
-
+  
         statusEl.textContent = 'Link verified. Enter your new password:'
         formEl.style.display = 'block'
-
+  
         btnEl.onclick = async (e) => {
           e.preventDefault()
           const pwd = pwdEl.value.trim()
@@ -61,11 +67,11 @@
           formEl.style.display = 'none'
         }
       } catch (e) {
-        console.error(e)
+        console.error('Reset error:', e, window.location.href)
         statusEl.textContent = 'Invalid or expired link. Please request a new password reset email.'
       }
     }
-
+  
     window.addEventListener('DOMContentLoaded', verifySessionFromUrl)
   </script>
 </head>
