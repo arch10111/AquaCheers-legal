@@ -45,16 +45,21 @@
     const SUPABASE_ANON_KEY = 'sb_publishable_0QU85I7LqcdOaPSVvZVMEg_reQ9GPKe';
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    function parseHash() {
-      const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : '';
-      return Object.fromEntries(new URLSearchParams(hash));
+    function qs() {
+      return new URLSearchParams(window.location.search);
     }
-
+    function hs() {
+      const h = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : '';
+      return new URLSearchParams(h);
+    }
     function validatePassword(pw) {
       if (!pw || pw.length < 7) return false;
       const hasDigit = /\d/.test(pw);
       const hasSpecial = /[!@#$%^&*()_\-+={}[\]|\\:;"'<>,.?/~`]/.test(pw);
       return hasDigit || hasSpecial;
+    }
+    function clearUrl() {
+      history.replaceState(null, '', window.location.pathname);
     }
 
     async function init() {
@@ -62,27 +67,63 @@
       const form = document.getElementById('form');
       const msg = document.getElementById('msg');
 
-      const params = parseHash();
-      const access_token = params['access_token'];
-      const refresh_token = params['refresh_token'];
-      const type = params['type'];
-
-      if (!access_token || !refresh_token || type !== 'recovery') {
-        status.textContent = 'Invalid or expired link. Please request a new password reset email.';
+      // 1) New GoTrue flow: ?code=...
+      const code = qs().get('code');
+      if (code) {
+        const { data, error } = await supabase.auth.exchangeCodeForSession({ code });
+        if (error) {
+          status.textContent = 'Invalid or expired link. Please request a new password reset email.';
+          return;
+        }
+        clearUrl();
+        status.textContent = 'Enter your new password below.';
+        form.style.display = '';
+        wireSubmit();
         return;
       }
 
-      // Set the session from the hash tokens
-      const { error: setErr } = await supabase.auth.setSession({ access_token, refresh_token });
-      if (setErr) {
-        status.textContent = 'Invalid or expired link. Please request a new password reset email.';
+      // 2) Legacy recovery flow: ?token_hash=... (or ?token=...) & type=recovery
+      const type = qs().get('type');
+      const tokenHash = qs().get('token_hash') || qs().get('token');
+      if (type === 'recovery' && tokenHash) {
+        const { data, error } = await supabase.auth.verifyOtp({ type: 'recovery', token_hash: tokenHash });
+        if (error) {
+          status.textContent = 'Invalid or expired link. Please request a new password reset email.';
+          return;
+        }
+        clearUrl();
+        status.textContent = 'Enter your new password below.';
+        form.style.display = '';
+        wireSubmit();
         return;
       }
 
-      status.textContent = 'Enter your new password below.';
-      form.style.display = '';
+      // 3) Hash tokens flow: #access_token=...&refresh_token=...
+      const access_token = hs().get('access_token');
+      const refresh_token = hs().get('refresh_token');
+      if (access_token && refresh_token) {
+        const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+        if (error) {
+          status.textContent = 'Invalid or expired link. Please request a new password reset email.';
+          return;
+        }
+        clearUrl();
+        status.textContent = 'Enter your new password below.';
+        form.style.display = '';
+        wireSubmit();
+        return;
+      }
 
-      document.getElementById('submit').onclick = async () => {
+      // If none matched
+      status.textContent = 'Invalid or expired link. Please request a new password reset email.';
+    }
+
+    function wireSubmit() {
+      const submit = document.getElementById('submit');
+      const msg = document.getElementById('msg');
+      const status = document.getElementById('status');
+
+      submit.onclick = async () => {
         msg.className = '';
         msg.textContent = '';
         const pw = document.getElementById('password').value;
@@ -98,22 +139,18 @@
           msg.textContent = 'Password must be at least 7 characters and include a digit or a special character.';
           return;
         }
-        document.getElementById('submit').disabled = true;
-
-        const { data, error } = await supabase.auth.updateUser({ password: pw });
-        document.getElementById('submit').disabled = false;
+        submit.disabled = true;
+        const { error } = await supabase.auth.updateUser({ password: pw });
+        submit.disabled = false;
 
         if (error) {
           msg.className = 'error';
           msg.textContent = error.message || 'Failed to update password.';
           return;
         }
-
         msg.className = 'success';
         msg.textContent = 'Password updated successfully. You can close this tab and sign in with your new password.';
         status.textContent = 'Password updated';
-        // Optional: clear the hash for safety
-        history.replaceState(null, '', location.pathname);
       };
     }
 
