@@ -1,2 +1,1 @@
-# AquaCheers-legal
-Legal Information about AquaCheers app.
+ <h1>Thanks for signing up for AquaCheers!</h1>
